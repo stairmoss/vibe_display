@@ -17,6 +17,8 @@ It is built using an ESP32 microcontroller and a TFT display, with optional butt
 
 ---
 
+![Screenshot from 2026-04-25 13-41-19](https://stasis.hackclub-assets.com/images/1777105131604-xkr9vh.png)
+
 ## Features
 
 - Real-time Spotify track display  
