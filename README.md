@@ -67,3 +67,8 @@ It is built using an ESP32 microcontroller and a TFT display, with optional butt
    - Client ID  
    - Client Secret  
 4. Add a redirect URI (can be temporary)
+
+
+
+
+demo after building it 
