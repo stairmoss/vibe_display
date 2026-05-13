@@ -72,3 +72,8 @@ It is built using an ESP32 microcontroller and a TFT display, with optional butt
 
 
 demo after building it 
+
+
+
+
+### pls star 
