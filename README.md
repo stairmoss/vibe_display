@@ -17,7 +17,7 @@ It is built using an ESP32 microcontroller and a TFT display, with optional butt
 
 ---
 
-![Screenshot from 2026-04-25 13-41-19](https://stasis.hackclub-assets.com/images/1777105131604-xkr9vh.png)
+![image](https://cdn.hackclub.com/019e21ce-289d-779d-8a08-0911892d8714/1777105131828-0tbyr3.webp)![image]
 
 ## Features
 
