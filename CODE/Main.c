@@ -5,137 +5,113 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_spiffs.h" // For your Animation folder
 
-// --- Pin Definitions 
-#define PIN_NUM_MISO -1 // Not used for LCD
-#define PIN_NUM_MOSI 23
-#define PIN_NUM_CLK  19
-#define PIN_NUM_CS   22
-#define PIN_NUM_DC   21
-#define PIN_NUM_RST  18
-#define PIN_NUM_BCKL 5
-
-// LCD Dimensions
-#define LCD_WIDTH  128
-#define LCD_HEIGHT 160
-
+// #notiplay #vibe-coding #esp32 #zentalic
 static const char *TAG = "notiplay";
 
-// Simple SPI Send Command
-void lcd_cmd(spi_device_handle_t spi, const uint8_t cmd) {
-    esp_err_t ret;
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.length = 8;
-    t.tx_buffer = &cmd;
-    t.user = (void*)0; // DC pin low for command
-    ret = spi_device_polling_transmit(spi, &t);
-    assert(ret == ESP_OK);
-}
+// --- Hardware Pins ---
+#define BTN_MODE    34
+#define BTN_ACTION  35
+#define BTN_EXTRA   32
+#define LCD_DC      21
+#define LCD_CS      22
 
-// Simple SPI Send Data
-void lcd_data(spi_device_handle_t spi, const uint8_t *data, int len) {
-    if (len == 0) return;
-    esp_err_t ret;
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.length = len * 8;
-    t.tx_buffer = data;
-    t.user = (void*)1; // DC pin high for data
-    ret = spi_device_polling_transmit(spi, &t);
-    assert(ret == ESP_OK);
-}
+// --- App States ---
+typedef enum {
+    MODE_SPOTIFY,
+    MODE_ANIMATION,
+    MODE_TIME,
+    MODE_HACKATIME, // Your Wakatime/Hackatime leaderboard
+    MODE_COUNT
+} device_mode_t;
 
-// Callback to handle the DC  pin toggle
-void lcd_spi_pre_transfer_callback(spi_transaction_t *t) {
-    int dc = (int)t->user;
-    gpio_set_level(PIN_NUM_DC, dc);
-}
+device_mode_t current_mode = MODE_SPOTIFY;
+int animation_frame = 0;
 
-// Basic ST7735 Initialization
-void lcd_init(spi_device_handle_t spi) {
-    gpio_set_level(PIN_NUM_RST, 0);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    gpio_set_level(PIN_NUM_RST, 1);
-    vTaskDelay(pdMS_TO_TICKS(100));
+// This is a "stub" - in a real app, you'd update these via Wi-Fi
+char current_song[32] = "Loading Spotify...";
+char current_artist[32] = "Please wait";
 
-    lcd_cmd(spi, 0x01); // Software Reset
-    vTaskDelay(pdMS_TO_TICKS(150));
-    lcd_cmd(spi, 0x11); // Sleep Out
-    vTaskDelay(pdMS_TO_TICKS(500));
+// --- Human-friendly functions ---
+
+void handle_buttons() {
+    // Switch Modes
+    if (gpio_get_level(BTN_MODE) == 0) {
+        current_mode = (current_mode + 1) % MODE_COUNT;
+        ESP_LOGI(TAG, "Switched to mode: %d", current_mode);
+        vTaskDelay(pdMS_TO_TICKS(300)); // Debounce
+    }
     
-    lcd_cmd(spi, 0x3A); // Interface Pixel Format
-    uint8_t format = 0x05; // 16-bit color
-    lcd_data(spi, &format, 1);
-
-    lcd_cmd(spi, 0x29); // Display ON
-}
-
-// Fill screen with a solid color (e.g., for "Animations" or Backgrounds)
-void fill_screen(spi_device_handle_t spi, uint16_t color) {
-    uint8_t data[2];
-    data[0] = color >> 8;
-    data[1] = color & 0xFF;
-
-    // Set Window to full screen
-    lcd_cmd(spi, 0x2A); // Column Address Set
-    uint8_t caset[] = {0x00, 0x00, 0x00, LCD_WIDTH - 1};
-    lcd_data(spi, caset, 4);
-
-    lcd_cmd(spi, 0x2B); // Row Address Set
-    uint8_t raset[] = {0x00, 0x00, 0x00, LCD_HEIGHT - 1};
-    lcd_data(spi, raset, 4);
-
-    lcd_cmd(spi, 0x2C); // Memory Write
-    for (int i = 0; i < LCD_WIDTH * LCD_HEIGHT; i++) {
-        lcd_data(spi, data, 2);
+    // Action Button (Next Song or Next Animation)
+    if (gpio_get_level(BTN_ACTION) == 0) {
+        if (current_mode == MODE_ANIMATION) {
+            animation_frame = 0; // Reset or Skip
+            ESP_LOGI(TAG, "Next Animation triggered");
+        }
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
 
+void draw_spotify_ui() {
+    // #spotify #nowplaying
+    // Logic: Draw a small square on the left for the thumbnail
+    // Draw text on the right
+    // Note: To show real thumbnails, you'll need the 'esp_jpeg' component
+    printf("[UI] Showing: %s by %s\n", current_song, current_artist);
+}
+
+void draw_animation_mode() {
+    // #vibes #gif
+    // Logic: Read from your /Animation folder
+    // For now, we simulate a frame tick
+    animation_frame++;
+    printf("[UI] Playing Animation Frame: %d\n", animation_frame);
+}
+
+void draw_time_mode() {
+    // #clock #activity
+    printf("[UI] 10:45 PM | Activity: Coding OREO V2\n");
+}
+
+void draw_leaderboard() {
+    // #hackatime #coding-stats
+    printf("[UI] 1. Adarsh: 12hrs | 2. Ghost: 10hrs\n");
+}
+
 void app_main(void) {
-    // 1. Setup GPIOs
-    gpio_set_direction(PIN_NUM_DC, GPIO_MODE_OUTPUT);
-    gpio_set_direction(PIN_NUM_RST, GPIO_MODE_OUTPUT);
-    gpio_set_direction(PIN_NUM_BCKL, GPIO_MODE_OUTPUT);
-    gpio_set_level(PIN_NUM_BCKL, 1); // Turn on Backlight
-
-    // 2. Setup SPI Bus
-    spi_bus_config_t buscfg = {
-        .miso_io_num = PIN_NUM_MISO,
-        .mosi_io_num = PIN_NUM_MOSI,
-        .sclk_io_num = PIN_NUM_CLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = LCD_WIDTH * LCD_HEIGHT * 2
+    // Setup Buttons
+    gpio_config_t btn_config = {
+        .pin_bit_mask = (1ULL << BTN_MODE) | (1ULL << BTN_ACTION) | (1ULL << BTN_EXTRA),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE
     };
+    gpio_config(&btn_config);
 
-    spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 26 * 1000 * 1000, // 26MHz
-        .mode = 0,
-        .spics_io_num = PIN_NUM_CS,
-        .queue_size = 7,
-        .pre_cb = lcd_spi_pre_transfer_callback,
+    // Initializing SPIFFS for your "Animation" folder
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/spiffs",
+      .partition_label = NULL,
+      .max_files = 5,
+      .format_if_mount_failed = true
     };
+    esp_vfs_spiffs_register(&conf);
 
-    spi_bus_initialize(HSPI_HOST, &buscfg, 1);
-    spi_device_handle_t spi;
-    spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
+    ESP_LOGI(TAG, "Zentalic Display System Started!");
 
-    // 3. Init LCD
-    lcd_init(spi);
-    ESP_LOGI(TAG, "Display Initialized!");
-
-    // 4. Main "Vibe" Loop
     while (1) {
-        // Mocking the data update
-        printf("Updating Display: Spotify: 'Moonlight', Temp: 28C, Stocks: +2%%\n");
+        handle_buttons();
 
-        // Flash "Animation" effect
-        fill_screen(spi, 0xF800); // Red
-        vTaskDelay(pdMS_TO_TICKS(500));
-        fill_screen(spi, 0x07E0); // Green
-        vTaskDelay(pdMS_TO_TICKS(500));
-        fill_screen(spi, 0x001F); // Blue
-        vTaskDelay(pdMS_TO_TICKS(500));
+        // Refresh screen based on mode
+        switch (current_mode) {
+            case MODE_SPOTIFY:   draw_spotify_ui(); break;
+            case MODE_ANIMATION: draw_animation_mode(); break;
+            case MODE_TIME:      draw_time_mode(); break;
+            case MODE_HACKATIME: draw_leaderboard(); break;
+            default: break;
+        }
+
+        // Keep it smooth but don't melt the CPU
+        vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 }
